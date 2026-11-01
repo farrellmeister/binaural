@@ -1,0 +1,32 @@
+name: Render sleep audio
+
+on:
+  push:
+    paths:
+      - tools/render_binaural.py
+      - .github/workflows/render-audio.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy
+      - name: Render 30-minute session
+        run: python tools/render_binaural.py --minutes 30 --out binaural-sleep-30min.wav
+      - name: Publish as release asset
+        run: |
+          gh release create binaural-30min binaural-sleep-30min.wav \
+            --title "Binaural Sleep — 30 min session (WAV)" \
+            --notes "Pre-rendered 30-minute binaural session: 136 Hz carrier, beat ramps 10 -> 6 -> 4 -> 2.5 Hz, 5 s fade-in, 60 s fade-out. Stereo WAV, use headphones. Plays on the lock screen of any phone/tablet audio app." \
+            --latest || \
+          gh release upload binaural-30min binaural-sleep-30min.wav --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
