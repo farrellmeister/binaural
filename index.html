@@ -82,7 +82,7 @@
   </div>
 
   <button id="btn">▶ Start session</button>
-  <p class="note">🎧 Use headphones — binaural beats require stereo. Carrier 136 Hz, beat ramps 10 → 2.5 Hz. Gentle fade-in and fade-out at the end of the timer.</p>
+  <p class="note">🎧 Use headphones — binaural beats require stereo. Carrier 136 Hz, beat ramps 10 → 2.5 Hz. Gentle fade-in and fade-out. Screen Wake Lock keeps the session running while the page is open.</p>
 </div>
 
 <script>
@@ -96,7 +96,20 @@ const STAGES = [
 const CARRIER = 136; // Hz
 
 let ctx = null, oscL = null, oscR = null, gain = null;
-let playing = false, raf = null, startTs = 0;
+let playing = false, raf = null, startTs = 0, wakeLock = null;
+
+// Screen Wake Lock: prevents iPad/iPhone auto-sleep, which would kill the audio
+async function acquireLock() {
+  try {
+    if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen");
+  } catch (e) {}
+}
+function releaseLock() {
+  if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && playing && !wakeLock) acquireLock();
+});
 
 const $ = (id) => document.getElementById(id);
 const timerEl = $("timer"), volEl = $("vol"), btn = $("btn");
@@ -124,6 +137,7 @@ function teardown(fade) {
   fade = fade || 1.5;
   if (raf) cancelAnimationFrame(raf);
   raf = null;
+  releaseLock();
   if (gain && ctx) {
     gain.gain.cancelScheduledValues(ctx.currentTime);
     gain.gain.setValueAtTime(gain.gain.value, ctx.currentTime);
@@ -167,6 +181,7 @@ function start() {
   gain.gain.linearRampToValueAtTime(Number(volEl.value) * 0.5, ctx.currentTime + 3);
   startTs = Date.now();
   playing = true;
+  acquireLock();
   timerEl.disabled = true;
   btn.textContent = "Stop & reset";
   btn.classList.add("stop");
