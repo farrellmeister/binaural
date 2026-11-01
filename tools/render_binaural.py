@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Render a binaural-beats sleep session as a stereo WAV file.
+"""Render binaural-beats sessions (sleep / focus) as stereo WAV files.
 
-Left ear: fixed 136 Hz carrier. Right ear: carrier + beat, where the beat
-ramps 10 Hz (alpha) -> 6 (theta) -> 4 -> 2.5 Hz (delta) across the session.
-Phase is integrated so frequency changes are click-free. 5 s fade-in,
-60 s fade-out. Rendered in 60-second chunks so memory stays constant.
+Left ear: fixed carrier. Right ear: carrier + beat, where the beat follows a
+piecewise-linear stage ramp (mode-dependent). Phase is integrated so
+frequency changes are click-free. 5 s fade-in, 60 s fade-out.
+Rendered in 60-second chunks so memory stays constant.
 """
 import argparse
 import wave
@@ -33,7 +33,7 @@ SR = 8000
 CHUNK = SR * 60
 
 
-def beat_envelope(n, total, start=0, stages=None):
+def beat_envelope(n, total, start, stages):
     """Beat frequency at each sample, piecewise-linear across stages."""
     t = (np.arange(n, dtype=np.float64) + start) / total
     freq = np.zeros(n)
@@ -64,10 +64,12 @@ def render(minutes, out, mode="sleep"):
             m = min(CHUNK, total - i)
             idx = np.arange(i, i + m, dtype=np.float64)
             freq = beat_envelope(m, total, i, stages)
-            phase += 2 * np.pi * np.cumsum(freq) / SR
+            inc = 2 * np.pi * np.cumsum(freq) / SR
+            inc += phase  # broadcast scalar onto array
+            phase = float(inc[-1])  # keep as scalar for the next chunk
             t = idx / SR
             left = 0.5 * np.sin(2 * np.pi * carrier * t)
-            right = 0.5 * np.sin(2 * np.pi * CARRIER * t + phase)
+            right = 0.5 * np.sin(2 * np.pi * carrier * t + inc)
             # envelope: fade-in then fade-out, applied multiplicatively
             env = np.ones(m)
             rel = idx / total
