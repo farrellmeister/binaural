@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Binaural Sleep — Awake to Deep Sleep</title>
+<title>Binaural — Sleep & Focus</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -19,6 +19,16 @@
   .moon { font-size: 40px; }
   h1 { font-size: 24px; font-weight: 600; margin-top: 8px; letter-spacing: 0.5px; }
   .sub { color: #94a3b8; font-size: 13px; margin-top: 4px; }
+  .modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 20px 0; }
+  .modes button {
+    padding: 12px; border-radius: 16px; font-size: 14px; font-weight: 500;
+    cursor: pointer; color: #e2e8f0;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    transition: all 0.15s ease;
+  }
+  .modes button.on { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.3); }
+  .modes button:disabled { opacity: 0.4; cursor: default; }
   .card {
     background: rgba(255,255,255,0.05);
     border: 1px solid rgba(255,255,255,0.1);
@@ -35,14 +45,14 @@
   input[type=range] { width: 100%; accent-color: #6366f1; }
   input[type=range]:disabled { opacity: 0.4; }
   .scale { display: flex; justify-content: space-between; font-size: 10px; color: #64748b; margin-top: 4px; }
-  button {
+  button.go {
     width: 100%; padding: 16px; border: none; border-radius: 16px;
     font-size: 17px; font-weight: 600; cursor: pointer; color: #fff;
     background: linear-gradient(135deg, #6366f1, #8b5cf6);
     transition: transform 0.1s ease;
   }
-  button:active { transform: scale(0.98); }
-  button.stop { background: rgba(248,113,113,0.15); border: 1px solid rgba(248,113,113,0.4); color: #fca5a5; }
+  button.go:active { transform: scale(0.98); }
+  button.go.stop { background: rgba(248,113,113,0.15); border: 1px solid rgba(248,113,113,0.4); color: #fca5a5; }
   .note { font-size: 11px; color: #64748b; text-align: center; margin-top: 16px; line-height: 1.6; }
   .mt { margin-top: 20px; }
 </style>
@@ -50,25 +60,26 @@
 <body>
 <div class="wrap">
   <div class="center">
-    <div class="moon">🌙</div>
-    <h1>Binaural Sleep</h1>
-    <p class="sub">Alpha → Theta → Delta ramp into deep sleep</p>
+    <div class="moon" id="icon">🌙</div>
+    <h1 id="title">Binaural Sleep</h1>
+    <p class="sub" id="blurb">Alpha → Theta → Delta ramp into deep sleep</p>
+  </div>
+
+  <div class="modes">
+    <button id="mSleep" class="on">🌙 Sleep</button>
+    <button id="mFocus">⚡ Focus</button>
   </div>
 
   <div class="card center">
     <div class="label" id="stageLabel">Beat profile</div>
     <div class="stage" id="stageText">Relax · 10.0 Hz</div>
-    <div class="bar">
-      <span style="width:30%;background:#7c8cf8"></span>
-      <span style="width:30%;background:#5b6cd8"></span>
-      <span style="width:40%;background:#3d4ba8"></span>
-    </div>
-    <div class="ticks"><span>10 Hz</span><span>6 Hz</span><span>4 Hz</span><span>2.5 Hz</span></div>
+    <div class="bar" id="bar"></div>
+    <div class="ticks" id="ticks"></div>
   </div>
 
   <div class="card">
     <div class="row">
-      <span style="color:#94a3b8;font-size:14px">Sleep timer</span>
+      <span style="color:#94a3b8;font-size:14px" id="timerLabel">Sleep timer</span>
       <span class="time" id="remaining">30:00</span>
     </div>
     <input type="range" id="timer" min="5" max="120" step="5" value="30" />
@@ -81,24 +92,41 @@
     <input type="range" id="vol" min="0" max="1" step="0.05" value="0.4" />
   </div>
 
-  <button id="btn">▶ Start session</button>
-  <p class="note">🎧 Use headphones — binaural beats require stereo. Carrier 136 Hz, beat ramps 10 → 2.5 Hz. Gentle fade-in and fade-out. Screen Wake Lock keeps the session running while the page is open.</p>
+  <button class="go" id="btn">▶ Start session</button>
+  <p class="note" id="note">🎧 Use headphones — binaural beats require stereo. Carrier 136 Hz, beat ramps 10 → 2.5 Hz. Gentle fade-in and fade-out. Screen Wake Lock keeps the session running while the page is open.</p>
 </div>
 
 <script>
-// Stage plan: awake -> calm -> deep sleep
-// Relax: alpha 10 -> theta 6 Hz | Drowsy: 6 -> 4 Hz | Deep sleep: 4 -> 2.5 Hz
-const STAGES = [
-  { name: "Relax",      from: 10, to: 6,   share: 0.3, color: "#7c8cf8" },
-  { name: "Drowsy",     from: 6,  to: 4,   share: 0.3, color: "#5b6cd8" },
-  { name: "Deep sleep", from: 4,  to: 2.5, share: 0.4, color: "#3d4ba8" },
-];
-const CARRIER = 136; // Hz
+// Modes
+// Sleep:  Relax 10->6 | Drowsy 6->4 | Deep sleep 4->2.5 Hz (carrier 136)
+// Focus:  Settle 10->14 | Engage 14->18 | Lock in 18->16 Hz (carrier 200)
+const MODES = {
+  sleep: {
+    icon: "🌙", title: "Binaural Sleep",
+    blurb: "Alpha → Theta → Delta ramp into deep sleep",
+    carrier: 136, defaultMinutes: 30,
+    stages: [
+      { name: "Relax", from: 10, to: 6, share: 0.3, color: "#7c8cf8" },
+      { name: "Drowsy", from: 6, to: 4, share: 0.3, color: "#5b6cd8" },
+      { name: "Deep sleep", from: 4, to: 2.5, share: 0.4, color: "#3d4ba8" },
+    ],
+  },
+  focus: {
+    icon: "⚡", title: "Binaural Focus",
+    blurb: "Alpha → Beta ramp for productivity & concentration",
+    carrier: 200, defaultMinutes: 25,
+    stages: [
+      { name: "Settle", from: 10, to: 14, share: 0.2, color: "#4ade80" },
+      { name: "Engage", from: 14, to: 18, share: 0.5, color: "#22c55e" },
+      { name: "Lock in", from: 18, to: 16, share: 0.3, color: "#16a34a" },
+    ],
+  },
+};
+let mode = "sleep";
 
 let ctx = null, oscL = null, oscR = null, gain = null;
 let playing = false, raf = null, startTs = 0, wakeLock = null;
 
-// Screen Wake Lock: prevents iPad/iPhone auto-sleep, which would kill the audio
 async function acquireLock() {
   try {
     if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen");
@@ -113,8 +141,8 @@ document.addEventListener("visibilitychange", () => {
 
 const $ = (id) => document.getElementById(id);
 const timerEl = $("timer"), volEl = $("vol"), btn = $("btn");
-
 const totalSec = () => Number(timerEl.value) * 60;
+const M = () => MODES[mode];
 
 function fmt(sec) {
   const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
@@ -122,15 +150,46 @@ function fmt(sec) {
 }
 
 function beatAt(p) {
+  const ST = M().stages;
   let acc = 0;
-  for (let i = 0; i < STAGES.length; i++) {
-    const st = STAGES[i];
-    if (p <= acc + st.share || i === STAGES.length - 1) {
+  for (let i = 0; i < ST.length; i++) {
+    const st = ST[i];
+    if (p <= acc + st.share || i === ST.length - 1) {
       const t = Math.min(1, Math.max(0, (p - acc) / st.share));
       return { name: st.name, freq: st.from + (st.to - st.from) * t, color: st.color };
     }
     acc += st.share;
   }
+}
+
+function paintProfile() {
+  const st = M().stages;
+  $("bar").innerHTML = st.map(s => '<span style="width:' + (s.share*100) + '%;background:' + s.color + '"></span>').join("");
+  $("ticks").innerHTML = st.map(s => "<span>" + s.from + " Hz</span>").join("") +
+    "<span>" + st[st.length-1].to + " Hz</span>";
+  $("icon").textContent = M().icon;
+  $("title").textContent = M().title;
+  $("blurb").textContent = M().blurb;
+  $("timerLabel").textContent = mode === "sleep" ? "Sleep timer" : "Focus timer";
+  $("minLabel").textContent = timerEl.value + " min";
+  $("note").textContent = "🎧 Use headphones — binaural beats require stereo. Carrier " + M().carrier +
+    " Hz, beat ramps " + st[0].from + " → " + st[st.length-1].to +
+    " Hz. Gentle fade-in and fade-out. Screen Wake Lock keeps the session running while the page is open.";
+}
+
+function selectMode(m) {
+  if (playing && m !== mode) return;
+  mode = m;
+  $("mSleep").classList.toggle("on", m === "sleep");
+  $("mFocus").classList.toggle("on", m === "focus");
+  if (!playing) {
+    timerEl.value = M().defaultMinutes;
+    $("remaining").textContent = fmt(totalSec());
+    $("stageLabel").textContent = "Beat profile";
+    $("stageText").textContent = M().stages[0].name + " · " + M().stages[0].from.toFixed(1) + " Hz";
+    $("stageText").style.color = M().stages[0].color;
+  }
+  paintProfile();
 }
 
 function teardown(fade) {
@@ -153,7 +212,7 @@ function tick() {
   const elapsed = (Date.now() - startTs) / 1000;
   const p = Math.min(1, elapsed / totalSec());
   const b = beatAt(p);
-  if (oscR && ctx) oscR.frequency.setTargetAtTime(CARRIER + b.freq, ctx.currentTime, 0.5);
+  if (oscR && ctx) oscR.frequency.setTargetAtTime(M().carrier + b.freq, ctx.currentTime, 0.5);
   $("remaining").textContent = fmt(Math.max(0, totalSec() - elapsed));
   $("stageLabel").textContent = "Current stage";
   $("stageText").textContent = b.name + " · " + b.freq.toFixed(1) + " Hz";
@@ -171,8 +230,8 @@ function start() {
   oscL = ctx.createOscillator();
   oscR = ctx.createOscillator();
   oscL.type = oscR.type = "sine";
-  oscL.frequency.value = CARRIER;
-  oscR.frequency.value = CARRIER + 10;
+  oscL.frequency.value = M().carrier;
+  oscR.frequency.value = M().carrier + M().stages[0].from;
   oscL.connect(merger, 0, 0);
   oscR.connect(merger, 0, 1);
   merger.connect(gain);
@@ -183,6 +242,8 @@ function start() {
   playing = true;
   acquireLock();
   timerEl.disabled = true;
+  $("mSleep").disabled = false;
+  $("mFocus").disabled = false;
   btn.textContent = "Stop & reset";
   btn.classList.add("stop");
   raf = requestAnimationFrame(tick);
@@ -196,11 +257,13 @@ function stop() {
   btn.classList.remove("stop");
   $("remaining").textContent = fmt(totalSec());
   $("stageLabel").textContent = "Beat profile";
-  $("stageText").textContent = "Relax · 10.0 Hz";
-  $("stageText").style.color = "#7c8cf8";
+  $("stageText").textContent = M().stages[0].name + " · " + M().stages[0].from.toFixed(1) + " Hz";
+  $("stageText").style.color = M().stages[0].color;
 }
 
 btn.addEventListener("click", () => (playing ? stop() : start()));
+$("mSleep").addEventListener("click", () => selectMode("sleep"));
+$("mFocus").addEventListener("click", () => selectMode("focus"));
 timerEl.addEventListener("input", () => {
   $("minLabel").textContent = timerEl.value + " min";
   if (!playing) $("remaining").textContent = fmt(totalSec());
@@ -211,6 +274,7 @@ volEl.addEventListener("input", () => {
     gain.gain.setTargetAtTime(Number(volEl.value) * 0.5, ctx.currentTime, 0.2);
   }
 });
+paintProfile();
 </script>
 </body>
 </html>

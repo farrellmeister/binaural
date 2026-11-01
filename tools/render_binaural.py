@@ -11,32 +11,46 @@ import wave
 
 import numpy as np
 
-STAGES = [  # (from_hz, to_hz, share-of-session)
-    (10.0, 6.0, 0.3),   # Relax: alpha -> theta
-    (6.0, 4.0, 0.3),    # Drowsy: theta
-    (4.0, 2.5, 0.4),    # Deep sleep: delta
-]
-CARRIER = 136.0
+MODES = {
+    "sleep": {  # awake -> calm -> deep sleep
+        "stages": [
+            (10.0, 6.0, 0.3),   # Relax: alpha -> theta
+            (6.0, 4.0, 0.3),    # Drowsy: theta
+            (4.0, 2.5, 0.4),    # Deep sleep: delta
+        ],
+        "carrier": 136.0,
+    },
+    "focus": {  # settle -> engage -> sustained concentration (beta band)
+        "stages": [
+            (10.0, 14.0, 0.2),  # Settle
+            (14.0, 18.0, 0.5),  # Engage
+            (18.0, 16.0, 0.3),  # Lock in
+        ],
+        "carrier": 200.0,
+    },
+}
 SR = 8000
 CHUNK = SR * 60
 
 
-def beat_envelope(n, total, start=0):
+def beat_envelope(n, total, start=0, stages=None):
     """Beat frequency at each sample, piecewise-linear across stages."""
     t = (np.arange(n, dtype=np.float64) + start) / total
     freq = np.zeros(n)
     acc = 0.0
-    for i, (f0, f1, share) in enumerate(STAGES):
+    for i, (f0, f1, share) in enumerate(stages):
         lo = acc
-        hi = 1.0 if i == len(STAGES) - 1 else acc + share
-        m = (t >= lo) & (t < hi if i < len(STAGES) - 1 else t <= hi)
+        hi = 1.0 if i == len(stages) - 1 else acc + share
+        m = (t >= lo) & (t < hi if i < len(stages) - 1 else t <= hi)
         frac = np.clip((t[m] - lo) / share, 0.0, 1.0)
         freq[m] = f0 + (f1 - f0) * frac
         acc += share
     return freq
 
 
-def render(minutes, out):
+def render(minutes, out, mode="sleep"):
+    stages = MODES[mode]["stages"]
+    carrier = MODES[mode]["carrier"]
     total = int(minutes * 60 * SR)
     fin = min(5 * SR, total // 2)
     fout = min(60 * SR, total // 2)
@@ -49,10 +63,10 @@ def render(minutes, out):
         while i < total:
             m = min(CHUNK, total - i)
             idx = np.arange(i, i + m, dtype=np.float64)
-            freq = beat_envelope(m, total, i)
+            freq = beat_envelope(m, total, i, stages)
             phase += 2 * np.pi * np.cumsum(freq) / SR
             t = idx / SR
-            left = 0.5 * np.sin(2 * np.pi * CARRIER * t)
+            left = 0.5 * np.sin(2 * np.pi * carrier * t)
             right = 0.5 * np.sin(2 * np.pi * CARRIER * t + phase)
             # envelope: fade-in then fade-out, applied multiplicatively
             env = np.ones(m)
@@ -65,12 +79,13 @@ def render(minutes, out):
             w.writeframes((audio * 32767).astype("<i2").tobytes())
             i += m
     print(f"wrote {out}: {minutes} min, {total} samples, "
-          f"beat {freq[0]:.1f}->{freq[-1]:.2f} Hz")
+          f"beat {freq[0]:.1f}->{freq[-1]:.2f} Hz, mode {mode}")
 
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--minutes", type=float, default=30)
+    p.add_argument("--mode", default="sleep", choices=["sleep", "focus"])
     p.add_argument("--out", default="binaural-sleep-30min.wav")
     a = p.parse_args()
-    render(a.minutes, a.out)
+    render(a.minutes, a.out, a.mode)

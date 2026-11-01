@@ -1,4 +1,4 @@
-name: Render sleep audio
+name: Render audio
 
 on:
   push:
@@ -19,14 +19,16 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install numpy
-      - name: Render 30-minute session
-        run: python tools/render_binaural.py --minutes 30 --out binaural-sleep-30min.wav
-      - name: Publish as release asset
+      - name: Render sessions
         run: |
-          gh release create binaural-30min binaural-sleep-30min.wav \
-            --title "Binaural Sleep — 30 min session (WAV)" \
-            --notes "Pre-rendered 30-minute binaural session: 136 Hz carrier, beat ramps 10 -> 6 -> 4 -> 2.5 Hz, 5 s fade-in, 60 s fade-out. Stereo WAV, use headphones. Plays on the lock screen of any phone/tablet audio app." \
+          python tools/render_binaural.py --mode sleep --minutes 30 --out binaural-sleep-30min.wav
+          python tools/render_binaural.py --mode focus --minutes 25 --out binaural-focus-25min.wav
+      - name: Publish as release assets
+        run: |
+          gh release create sessions binaural-sleep-30min.wav binaural-focus-25min.wav \
+            --title "Binaural sessions (WAV)" \
+            --notes "Pre-rendered binaural sessions. Sleep: 136 Hz carrier, beat 10 -> 6 -> 4 -> 2.5 Hz, 30 min. Focus: 200 Hz carrier, beat 10 -> 14 -> 18 -> 16 Hz, 25 min. Stereo WAV, use headphones. Play on the lock screen in any audio app." \
             --latest || \
-          gh release upload binaural-30min binaural-sleep-30min.wav --clobber
+          gh release upload sessions binaural-sleep-30min.wav binaural-focus-25min.wav --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
